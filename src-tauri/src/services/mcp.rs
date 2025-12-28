@@ -37,6 +37,9 @@ impl McpService {
         if prev_apps.gemini && !server.apps.gemini {
             Self::remove_server_from_app(state, &server.id, &AppType::Gemini)?;
         }
+        if prev_apps.droid && !server.apps.droid {
+            Self::remove_server_from_app(state, &server.id, &AppType::Droid)?;
+        }
 
         // 同步到各个启用的应用
         Self::sync_server_to_apps(state, &server)?;
@@ -113,6 +116,9 @@ impl McpService {
             AppType::Gemini => {
                 mcp::sync_single_server_to_gemini(&Default::default(), &server.id, &server.server)?;
             }
+            AppType::Droid => {
+                mcp::sync_single_server_to_droid(&Default::default(), &server.id, &server.server)?;
+            }
         }
         Ok(())
     }
@@ -135,6 +141,7 @@ impl McpService {
             AppType::Claude => mcp::remove_server_from_claude(id)?,
             AppType::Codex => mcp::remove_server_from_codex(id)?,
             AppType::Gemini => mcp::remove_server_from_gemini(id)?,
+            AppType::Droid => mcp::remove_server_from_droid(id)?,
         }
         Ok(())
     }

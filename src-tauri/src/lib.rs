@@ -6,6 +6,7 @@ mod claude_plugin;
 mod codex_config;
 mod commands;
 mod config;
+mod droid_config;
 mod database;
 mod deeplink;
 mod error;
@@ -385,6 +386,7 @@ pub fn run() {
                     crate::app_config::AppType::Claude,
                     crate::app_config::AppType::Codex,
                     crate::app_config::AppType::Gemini,
+                    crate::app_config::AppType::Droid,
                 ] {
                     match crate::services::prompt::PromptService::import_from_file_on_first_launch(
                         &app_state,
@@ -648,6 +650,13 @@ pub fn run() {
             // Auto launch
             commands::set_auto_launch,
             commands::get_auto_launch_status,
+            // Droid config
+            commands::get_droid_settings,
+            commands::get_droid_config_status,
+            commands::get_droid_config,
+            commands::set_droid_config,
+            commands::cleanup_droid_settings,
+            commands::get_droid_config_path,
             // Proxy server management
             commands::start_proxy_server,
             commands::stop_proxy_with_restore,

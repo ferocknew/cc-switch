@@ -27,11 +27,13 @@ import { getCodexCustomTemplate } from "@/config/codexTemplates";
 import CodexConfigEditor from "./CodexConfigEditor";
 import { CommonConfigEditor } from "./CommonConfigEditor";
 import GeminiConfigEditor from "./GeminiConfigEditor";
+import { DroidConfigEditor } from "./DroidConfigEditor";
 import { ProviderPresetSelector } from "./ProviderPresetSelector";
 import { BasicFormFields } from "./BasicFormFields";
 import { ClaudeFormFields } from "./ClaudeFormFields";
 import { CodexFormFields } from "./CodexFormFields";
 import { GeminiFormFields } from "./GeminiFormFields";
+import { DroidFormFields } from "./DroidFormFields";
 import {
   useProviderCategory,
   useApiKeyState,
@@ -57,6 +59,17 @@ const GEMINI_DEFAULT_CONFIG = JSON.stringify(
       GEMINI_API_KEY: "",
       GEMINI_MODEL: "gemini-3-pro-preview",
     },
+  },
+  null,
+  2,
+);
+const DROID_DEFAULT_CONFIG = JSON.stringify(
+  {
+    apiKey: "",
+    baseUrl: "",
+    model: "",
+    provider: "anthropic",
+    maxOutputTokens: 131072,
   },
   null,
   2,
@@ -154,7 +167,9 @@ export function ProviderForm({
           ? CODEX_DEFAULT_CONFIG
           : appId === "gemini"
             ? GEMINI_DEFAULT_CONFIG
-            : CLAUDE_DEFAULT_CONFIG,
+            : appId === "droid"
+              ? DROID_DEFAULT_CONFIG
+              : CLAUDE_DEFAULT_CONFIG,
       icon: initialData?.icon ?? "",
       iconColor: initialData?.iconColor ?? "",
     }),
@@ -453,6 +468,51 @@ export function ProviderForm({
     initialData: appId === "gemini" ? initialData : undefined,
   });
 
+  // Droid 配置状态管理
+  const [droidApiKey, setDroidApiKey] = useState("");
+  const [droidBaseUrl, setDroidBaseUrl] = useState("");
+  const [droidModel, setDroidModel] = useState("");
+  const [droidProvider, setDroidProvider] = useState("anthropic");
+
+  // 当 initialData 或 appId 变化时，重新初始化 Droid 状态
+  useEffect(() => {
+    if (appId !== "droid") return;
+    
+    const config = initialData?.settingsConfig as any;
+    if (config) {
+      console.log("[Droid] initialData.settingsConfig:", config);
+      // 支持 camelCase 和 snake_case 两种格式
+      setDroidApiKey(config.apiKey || config.api_key || "");
+      setDroidBaseUrl(config.baseUrl || config.base_url || "");
+      setDroidModel(config.model || "");
+      setDroidProvider(config.provider || "anthropic");
+    } else {
+      // 新建模式，重置为空
+      setDroidApiKey("");
+      setDroidBaseUrl("");
+      setDroidModel("");
+      setDroidProvider("anthropic");
+    }
+  }, [appId, initialData?.settingsConfig]);
+
+  // 同步 Droid 字段到 settingsConfig
+  useEffect(() => {
+    if (appId !== "droid") return;
+    
+    try {
+      const config = {
+        apiKey: droidApiKey,
+        baseUrl: droidBaseUrl,
+        model: droidModel,
+        provider: droidProvider,
+        maxOutputTokens: 131072,
+      };
+      form.setValue("settingsConfig", JSON.stringify(config, null, 2));
+    } catch {
+      // ignore
+    }
+  }, [appId, droidApiKey, droidBaseUrl, droidModel, droidProvider, form]);
+
   const [isCommonConfigModalOpen, setIsCommonConfigModalOpen] = useState(false);
 
   const handleSubmit = (values: ProviderFormData) => {
@@ -565,6 +625,16 @@ export function ProviderForm({
         // 如果解析失败，使用表单中的配置
         settingsConfig = values.settingsConfig.trim();
       }
+    } else if (appId === "droid") {
+      // Droid: 使用状态中的配置
+      const droidConfig = {
+        apiKey: droidApiKey,
+        baseUrl: droidBaseUrl,
+        model: droidModel,
+        provider: droidProvider,
+        maxOutputTokens: 131072,
+      };
+      settingsConfig = JSON.stringify(droidConfig);
     } else {
       // Claude: 使用表单配置
       settingsConfig = values.settingsConfig.trim();
@@ -912,7 +982,23 @@ export function ProviderForm({
           />
         )}
 
-        {/* 配置编辑器：Codex、Claude、Gemini 分别使用不同的编辑器 */}
+        {/* Droid 专属字段 */}
+        {appId === "droid" && (
+          <DroidFormFields
+            shouldShowApiKey={category !== "official"}
+            apiKey={droidApiKey}
+            onApiKeyChange={setDroidApiKey}
+            category={category}
+            baseUrl={droidBaseUrl}
+            onBaseUrlChange={setDroidBaseUrl}
+            model={droidModel}
+            onModelChange={setDroidModel}
+            provider={droidProvider}
+            onProviderChange={setDroidProvider}
+          />
+        )}
+
+        {/* 配置编辑器：Codex、Claude、Gemini 分别使用不同的编辑器，Droid 不需要 */}
         {appId === "codex" ? (
           <>
             <CodexConfigEditor
@@ -955,6 +1041,34 @@ export function ProviderForm({
               commonConfigError={geminiCommonConfigError}
               envError={envError}
               configError={geminiConfigError}
+            />
+            {/* 配置验证错误显示 */}
+            <FormField
+              control={form.control}
+              name="settingsConfig"
+              render={() => (
+                <FormItem className="space-y-0">
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </>
+        ) : appId === "droid" ? (
+          // Droid 使用专门的配置编辑器，显示 snake_case 格式
+          <>
+            <DroidConfigEditor
+              apiKey={droidApiKey}
+              baseUrl={droidBaseUrl}
+              model={droidModel}
+              provider={droidProvider}
+              providerName={form.watch("name") || ""}
+              maxOutputTokens={131072}
+              onConfigChange={(config) => {
+                setDroidApiKey(config.apiKey);
+                setDroidBaseUrl(config.baseUrl);
+                setDroidModel(config.model);
+                setDroidProvider(config.provider);
+              }}
             />
             {/* 配置验证错误显示 */}
             <FormField

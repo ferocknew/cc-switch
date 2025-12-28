@@ -24,6 +24,7 @@ pub use live::{import_default_config, read_live_settings, sync_current_to_live};
 
 // Internal re-exports (pub(crate))
 pub(crate) use live::write_live_snapshot;
+pub(crate) use live::remove_droid_custom_model;
 
 // Internal re-exports
 use live::write_gemini_live;
@@ -175,6 +176,7 @@ impl ProviderService {
     /// Delete a provider
     ///
     /// 同时检查本地 settings 和数据库的当前供应商，防止删除任一端正在使用的供应商。
+    /// 对于 Droid，还会同步删除 config.json 中对应的 custom_model。
     pub fn delete(state: &AppState, app_type: AppType, id: &str) -> Result<(), AppError> {
         // Check both local settings and database
         let local_current = crate::settings::get_current_provider(&app_type);
@@ -184,6 +186,17 @@ impl ProviderService {
             return Err(AppError::Message(
                 "无法删除当前正在使用的供应商".to_string(),
             ));
+        }
+
+        // 对于 Droid，先获取供应商名称，然后从 config.json 中删除对应的 custom_model
+        if matches!(app_type, AppType::Droid) {
+            if let Ok(providers) = state.db.get_all_providers(app_type.as_str()) {
+                if let Some(provider) = providers.get(id) {
+                    if let Err(e) = remove_droid_custom_model(&provider.name) {
+                        log::warn!("从 Droid config.json 删除 custom_model 失败: {}", e);
+                    }
+                }
+            }
         }
 
         state.db.delete_provider(app_type.as_str(), id)
@@ -270,11 +283,13 @@ impl ProviderService {
 
         // Backfill: Backfill current live config to current provider
         // Use effective current provider (validated existence) to ensure backfill targets valid provider
+        // 注意：Droid 跳过回填，因为 config.json 格式是 {custom_models: [...]}，与数据库格式不同
         let current_id = crate::settings::get_effective_current_provider(&state.db, &app_type)?;
 
         if let Some(current_id) = current_id {
-            if current_id != id {
+            if current_id != id && !matches!(app_type, AppType::Droid) {
                 // Only backfill when switching to a different provider
+                // Skip backfill for Droid as its live config format differs from database format
                 if let Ok(live_config) = read_live_settings(app_type.clone()) {
                     if let Some(mut current_provider) = providers.get(&current_id).cloned() {
                         current_provider.settings_config = live_config;
@@ -469,6 +484,10 @@ impl ProviderService {
                 use crate::gemini_config::validate_gemini_settings;
                 validate_gemini_settings(&provider.settings_config)?
             }
+            AppType::Droid => {
+                // Droid 暂不支持配置验证
+                log::warn!("Droid 暂不支持配置验证");
+            }
         }
 
         // Validate and clean UsageScript configuration (common for all app types)
@@ -603,6 +622,47 @@ impl ProviderService {
                     .get("GOOGLE_GEMINI_BASE_URL")
                     .cloned()
                     .unwrap_or_else(|| "https://generativelanguage.googleapis.com".to_string());
+
+                Ok((api_key, base_url))
+            }
+            AppType::Droid => {
+                // Droid 使用与 Claude 相同的配置格式
+                let env = provider
+                    .settings_config
+                    .get("env")
+                    .and_then(|v| v.as_object())
+                    .ok_or_else(|| {
+                        AppError::localized(
+                            "provider.droid.env.missing",
+                            "配置格式错误: 缺少 env",
+                            "Invalid configuration: missing env section",
+                        )
+                    })?;
+
+                let api_key = env
+                    .get("ANTHROPIC_AUTH_TOKEN")
+                    .or_else(|| env.get("ANTHROPIC_API_KEY"))
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        AppError::localized(
+                            "provider.droid.api_key.missing",
+                            "缺少 API Key",
+                            "API key is missing",
+                        )
+                    })?
+                    .to_string();
+
+                let base_url = env
+                    .get("ANTHROPIC_BASE_URL")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        AppError::localized(
+                            "provider.droid.base_url.missing",
+                            "缺少 ANTHROPIC_BASE_URL 配置",
+                            "Missing ANTHROPIC_BASE_URL configuration",
+                        )
+                    })?
+                    .to_string();
 
                 Ok((api_key, base_url))
             }

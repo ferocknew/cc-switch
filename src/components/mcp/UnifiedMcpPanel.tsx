@@ -53,11 +53,12 @@ const UnifiedMcpPanel = React.forwardRef<
 
   // Count enabled servers per app
   const enabledCounts = useMemo(() => {
-    const counts = { claude: 0, codex: 0, gemini: 0 };
+    const counts = { claude: 0, codex: 0, gemini: 0, droid: 0 };
     serverEntries.forEach(([_, server]) => {
       if (server.apps.claude) counts.claude++;
       if (server.apps.codex) counts.codex++;
       if (server.apps.gemini) counts.gemini++;
+      if (server.apps.droid) counts.droid++;
     });
     return counts;
   }, [serverEntries]);
@@ -115,14 +116,15 @@ const UnifiedMcpPanel = React.forwardRef<
   };
 
   return (
-    <div className="mx-auto max-w-[56rem] px-6 flex flex-col h-[calc(100vh-8rem)] overflow-hidden">
+    <div className="mx-auto max-w-[62rem] px-6 flex flex-col h-[calc(100vh-8rem)] overflow-hidden">
       {/* Info Section */}
       <div className="flex-shrink-0 py-4 glass rounded-xl border border-white/10 mb-4 px-6">
         <div className="text-sm text-muted-foreground">
           {t("mcp.serverCount", { count: serverEntries.length })} ·{" "}
           {t("mcp.unifiedPanel.apps.claude")}: {enabledCounts.claude} ·{" "}
           {t("mcp.unifiedPanel.apps.codex")}: {enabledCounts.codex} ·{" "}
-          {t("mcp.unifiedPanel.apps.gemini")}: {enabledCounts.gemini}
+          {t("mcp.unifiedPanel.apps.gemini")}: {enabledCounts.gemini} ·{" "}
+          {t("mcp.unifiedPanel.apps.droid")}: {enabledCounts.droid}
         </div>
       </div>
 
@@ -308,6 +310,22 @@ const UnifiedMcpListItem: React.FC<UnifiedMcpListItemProps> = ({
             checked={server.apps.gemini}
             onCheckedChange={(checked: boolean) =>
               onToggleApp(id, "gemini", checked)
+            }
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <label
+            htmlFor={`${id}-droid`}
+            className="text-sm text-foreground/80 cursor-pointer"
+          >
+            {t("mcp.unifiedPanel.apps.droid")}
+          </label>
+          <Switch
+            id={`${id}-droid`}
+            checked={server.apps.droid}
+            onCheckedChange={(checked: boolean) =>
+              onToggleApp(id, "droid", checked)
             }
           />
         </div>

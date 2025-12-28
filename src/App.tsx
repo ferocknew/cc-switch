@@ -20,6 +20,8 @@ import { useProvidersQuery } from "@/lib/query";
 import {
   providersApi,
   settingsApi,
+  droidApi,
+  promptsApi,
   type AppId,
   type ProviderSwitchEvent,
 } from "@/lib/api";
@@ -72,6 +74,115 @@ function App() {
   const [confirmDelete, setConfirmDelete] = useState<Provider | null>(null);
   const [envConflicts, setEnvConflicts] = useState<EnvConflict[]>([]);
   const [showEnvBanner, setShowEnvBanner] = useState(false);
+
+  // 处理应用切换，当切换到 Droid 时读取配置并自动导入供应商
+  const handleAppSwitch = async (app: AppId) => {
+    // 切换应用时清理编辑状态，避免跨应用的 provider 数据污染
+    setEditingProvider(null);
+    setUsageProvider(null);
+    setConfirmDelete(null);
+    
+    if (app === "droid") {
+      try {
+        const settings = await droidApi.getSettings();
+        console.log("Droid settings:", settings);
+
+        // 解析 customModels 并转换为供应商
+        const customModels = (settings as any).customModels as Array<{
+          id: string;
+          displayName: string;
+          baseUrl: string;
+          apiKey: string;
+          model: string;
+          provider: string;
+          maxOutputTokens?: number;
+        }> | undefined;
+
+        if (customModels && customModels.length > 0) {
+          let importedCount = 0;
+          const existingProviders = await providersApi.getAll("droid");
+
+          for (const model of customModels) {
+            // 检查是否已存在同名供应商
+            const exists = Object.values(existingProviders).some(
+              (p) => p.name === model.displayName
+            );
+
+            if (!exists) {
+              const provider: Provider = {
+                id: crypto.randomUUID(),
+                name: model.displayName,
+                category: "custom",
+                settingsConfig: {
+                  baseUrl: model.baseUrl,
+                  apiKey: model.apiKey,
+                  model: model.model,
+                  provider: model.provider,
+                  maxOutputTokens: model.maxOutputTokens,
+                },
+                createdAt: Date.now(),
+                sortIndex: importedCount,
+              };
+
+              await providersApi.add(provider, "droid");
+              importedCount++;
+            }
+          }
+
+          if (importedCount > 0) {
+            toast.success(
+              t("notifications.droidImportSuccess", {
+                defaultValue: `已从 Droid 配置导入 ${importedCount} 个供应商`,
+                count: importedCount,
+              }),
+            );
+            // 刷新供应商列表
+            await queryClient.invalidateQueries({ queryKey: ["providers", "droid"] });
+          } else {
+            toast.info(
+              t("notifications.droidNoNewProviders", {
+                defaultValue: "Droid 配置中没有新的供应商需要导入",
+              }),
+            );
+          }
+        } else {
+          toast.info(
+            t("notifications.droidNoCustomModels", {
+              defaultValue: "Droid 配置中没有 customModels",
+            }),
+          );
+        }
+
+        // 检查并导入提示词文件（仅在没有提示词时导入）
+        try {
+          const existingPrompts = await promptsApi.getPrompts("droid");
+          const hasPrompts = Object.keys(existingPrompts).length > 0;
+          
+          if (!hasPrompts) {
+            const importedPromptId = await promptsApi.importFromFile("droid");
+            if (importedPromptId) {
+              toast.success(
+                t("notifications.droidPromptImported", {
+                  defaultValue: "已导入 Droid 提示词文件",
+                }),
+              );
+            }
+          }
+        } catch (error) {
+          // 如果提示词文件不存在，静默处理
+          console.log("Droid prompt import skipped:", error);
+        }
+      } catch (error) {
+        console.error("Failed to read Droid settings:", error);
+        toast.error(
+          t("notifications.droidSettingsLoadFailed", {
+            defaultValue: "读取 Droid 配置失败",
+          }) + `: ${error}`,
+        );
+      }
+    }
+    setActiveApp(app);
+  };
 
   // 保存最后一个有效的 provider，用于动画退出期间显示内容
   const lastUsageProviderRef = useRef<Provider | null>(null);
@@ -390,7 +501,7 @@ function App() {
             <SkillsPage
               ref={skillsPageRef}
               onClose={() => setCurrentView("providers")}
-              initialApp={activeApp}
+              initialApp={activeApp === "droid" ? "claude" : activeApp}
             />
           );
         case "mcp":
@@ -406,13 +517,13 @@ function App() {
           );
         case "universal":
           return (
-            <div className="mx-auto max-w-[56rem] px-5 pt-4">
+            <div className="mx-auto max-w-[62rem] px-5 pt-4">
               <UniversalProviderPanel />
             </div>
           );
         default:
           return (
-            <div className="mx-auto max-w-[56rem] px-5 flex flex-col h-[calc(100vh-8rem)] overflow-hidden">
+            <div className="mx-auto max-w-[62rem] px-5 flex flex-col h-[calc(100vh-8rem)] overflow-hidden">
               {/* 独立滚动容器 - 解决 Linux/Ubuntu 下 DndContext 与滚轮事件冲突 */}
               <div className="flex-1 overflow-y-auto overflow-x-hidden pb-12 px-1">
                 <AnimatePresence mode="wait">
@@ -515,7 +626,7 @@ function App() {
         }
       >
         <div
-          className="mx-auto flex h-full max-w-[56rem] flex-wrap items-center justify-between gap-2 px-6"
+          className="mx-auto flex h-full max-w-[62rem] flex-wrap items-center justify-between gap-2 px-6"
           data-tauri-drag-region
           style={{ WebkitAppRegion: "drag" } as any}
         >
@@ -554,7 +665,7 @@ function App() {
                     target="_blank"
                     rel="noreferrer"
                     className={cn(
-                      "text-xl font-semibold transition-colors",
+                      "text-xl font-semibold transition-colors whitespace-nowrap",
                       isProxyRunning && isCurrentAppTakeoverActive
                         ? "text-emerald-500 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-300"
                         : "text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300",
@@ -562,6 +673,9 @@ function App() {
                   >
                     CC Switch
                   </a>
+                  <span className="text-sm font-medium px-2 py-0.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-full whitespace-nowrap">
+                    droid
+                  </span>
                   <Button
                     variant="ghost"
                     size="icon"
@@ -627,7 +741,7 @@ function App() {
               <>
                 <ProxyToggle activeApp={activeApp} />
 
-                <AppSwitcher activeApp={activeApp} onSwitch={setActiveApp} />
+                <AppSwitcher activeApp={activeApp} onSwitch={handleAppSwitch} />
 
                 <div className="flex items-center gap-1 p-1 bg-muted rounded-xl">
                   <Button
@@ -703,7 +817,7 @@ function App() {
 
       <EditProviderDialog
         open={Boolean(editingProvider)}
-        provider={lastEditingProviderRef.current}
+        provider={editingProvider || lastEditingProviderRef.current}
         onOpenChange={(open) => {
           if (!open) {
             setEditingProvider(null);
